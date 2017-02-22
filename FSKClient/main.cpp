@@ -1,0 +1,185 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+/* 
+ * File:   main.cpp
+ * Author: root
+ *
+ * Created on February 13, 2017, 10:57 AM
+ */
+
+#include <cstdlib>
+#include <unistd.h>
+#include <stdio.h> //printf
+#include <string.h>    //strlen
+#include <sys/socket.h>    //socket
+#include <arpa/inet.h> //inet_addr
+#include <iostream>
+#include <fstream>      // std::filebuf, std::ifstream
+
+using namespace std;
+
+const uint32_t READ_MAX = 2048;
+const uint32_t RECV_MSG_MAX = 2048;
+const uint8_t HEADER_SIZE = sizeof(uint32_t);
+
+int g_skClient; // Client socket
+
+bool OpenFile()
+{
+    std::ifstream ifs ("test.txt", std::ifstream::in);
+
+    // get pointer to associated buffer object
+    std::filebuf* pbuf = ifs.rdbuf();
+
+    // get file size using buffer's members
+    std::size_t size = pbuf->pubseekoff (0,ifs.end,ifs.in);
+    pbuf->pubseekpos (0,ifs.in);
+
+    // allocate memory to contain file data
+    char* buffer=new char[size];
+
+    // get file data
+    pbuf->sgetn (buffer,size);
+
+    ifs.close();
+
+    // write content to stdout
+    std::cout.write (buffer,size);
+
+    delete[] buffer;
+
+    return 0;
+}
+
+bool SendFileHandler(const int8_t* uMessage)
+{
+    if (!uMessage)
+        return false;
+    
+    uint32_t uSendSize = 0;
+    uint32_t uLenData = 0;
+    uint32_t uLenSend = 0;
+    uint8_t uSendBuffer[READ_MAX + HEADER_SIZE + 1] = {0};
+    
+    uLenData = htonl(strlen((char*)uMessage));
+    memcpy(uSendBuffer, &uLenData, HEADER_SIZE); // Set 4 bytes data length header
+    memcpy(uSendBuffer + HEADER_SIZE, uMessage, strlen((char*)uMessage)); // Set data
+    uLenSend = HEADER_SIZE  + strlen((char*)uMessage);
+    
+//    cout << strlen((char*)uSendMessage) << endl; output uncorrect because of 4 bytes header
+    uSendSize = send(g_skClient, uSendBuffer, uLenSend, 0);    
+    if (uSendSize != uLenSend)
+    {
+        perror("send failed");
+        return false;
+    }
+    
+    return true;
+}
+
+std::string RecvMessageHandler()
+{
+    uint32_t uRecvSize = 0;
+    uint32_t uLenData = 0;
+    uint8_t uBytes = 0;
+    uint8_t uRecvBuffer[6] = {0};
+    std::string strRecv;
+    
+    // Receive 4 bytes header
+    uRecvSize = recv(g_skClient, &uLenData, HEADER_SIZE, 0);
+    if (uRecvSize != HEADER_SIZE) 
+    {
+        perror("recv header failed");
+        return "";
+    }
+    uLenData = ntohl(uLenData);
+    if (!uLenData || (uLenData >= RECV_MSG_MAX))
+        return "";
+
+    //Receive a reply from the server
+    while(uLenData > 0)
+    {
+        uBytes = std::min(uLenData, (uint32_t)(sizeof(uRecvBuffer) - 1));
+        
+        memset(uRecvBuffer, 0, sizeof(uRecvBuffer));
+        uRecvSize = recv(g_skClient, uRecvBuffer, uBytes, 0);
+        if (uRecvSize != uBytes) {
+            perror("recv data failed: ");
+            return "";
+        }
+        
+        strRecv += std::string((char*)uRecvBuffer);
+        uLenData -= uBytes;
+    }
+
+    return strRecv;
+}
+
+/*  
+ * 
+ */
+int main(int argc, char** argv) {
+    
+    struct sockaddr_in saServer;
+    std::string strFileName;
+
+    //Create socket
+    g_skClient = socket(AF_INET, SOCK_STREAM, 0);
+    if (g_skClient == -1) {
+        std::cout << "Could not create socket" << endl;
+        return 0;
+    }
+    std::cout << "Socket created" << endl;
+
+    saServer.sin_addr.s_addr = inet_addr("127.0.0.1");
+    saServer.sin_family = AF_INET;
+    saServer.sin_port = htons(8888);
+    
+    //Connect to remote server
+    if(connect(g_skClient, (struct sockaddr *) &saServer, sizeof (saServer)) < 0) {
+        perror("connect failed. Error");
+        close(g_skClient);
+        return 0;
+    }
+    std::cout << "Connected" << endl;
+        
+    struct timeval tvTimeout;
+    tvTimeout.tv_sec = 600;
+    tvTimeout.tv_usec = 0;
+    
+    // set timeout
+    if (setsockopt(g_skClient, SOL_SOCKET, SO_RCVTIMEO, (char *)&tvTimeout,sizeof(struct timeval)) < 0)
+    {
+        perror("set socket option failed!");
+        close(g_skClient);
+        return 0;
+    }
+
+    //keep communicating with server
+    while(true) {
+        std::cout << "Enter file name: ";
+        std::getline(std::cin, strFileName);
+        if(strFileName.empty())
+            break;
+        
+        OpenFile();
+        // Send message
+        if (!SendFileHandler(nullptr))
+            break;
+        
+        // Receive Msg
+        std::string strResponseMsg = RecvMessageHandler();
+        if(strResponseMsg.empty())
+            break;
+        
+        std::cout << "Server reply: " << strResponseMsg << endl;
+    }
+
+    close(g_skClient);
+    return 0;
+}
+
