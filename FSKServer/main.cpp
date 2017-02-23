@@ -26,14 +26,14 @@
 using namespace std;
 
 const uint32_t RECV_MAX = 2048;
-const uint32_t FILE_NAME_SIZE_MAX = 120;
+const uint16_t FILE_NAME_SIZE_MAX = 120;
 const uint8_t HEADER_SIZE = sizeof(uint32_t);
 
 bool SendResponseHandler(const std::string& ,const int );
 
 std::string MessageProcess(const std::string& strBuff)
 {    
-    return strBuff + "Success!";
+    return strBuff + " Success!";
 }
 
 bool RecvRequest(const int skClient, uint8_t* uFileName, uint32_t& uFileSize)
@@ -96,7 +96,7 @@ bool RecvFile(const int skClient, const uint8_t* uFileName, uint32_t uFileSize)
         return false;
     }
     
-    // Read data
+    // recv file
     while(uFileSize > 0)
     {
         // read 4 bytes (length data)
@@ -110,6 +110,7 @@ bool RecvFile(const int skClient, const uint8_t* uFileName, uint32_t uFileSize)
         if(!uLenData)
             break;
         
+        // recv data
         while(uLenData > 0)
         {
             uBytes = std::min(uLenData, RECV_MAX);        
@@ -118,6 +119,7 @@ bool RecvFile(const int skClient, const uint8_t* uFileName, uint32_t uFileSize)
             uReadSize = recv(skClient , uRecvBuffer, uBytes, 0);
             if(uReadSize != uBytes)
             {
+                ofsWriter.clear();
                 ofsWriter.close();
                 perror("recv data failed");
                 return false;
@@ -125,6 +127,14 @@ bool RecvFile(const int skClient, const uint8_t* uFileName, uint32_t uFileSize)
             
             //write to file
             ofsWriter.write((char*)uRecvBuffer, uBytes);
+            if(ofsWriter.fail())
+            {
+                ofsWriter.clear();
+                ofsWriter.close();
+                perror("write data to file failed");
+                return false;
+            }
+            
             uLenData -= uBytes;
             uFileSize -= uBytes;
         }
@@ -207,7 +217,7 @@ void *ConnectionHandler(void *skDesc)
         if(!RecvFileHandler(skClient))
             break;
         
-        std::string str = MessageProcess("");
+        std::string str = MessageProcess("Upload");
         
         // send response data
         if(!SendResponseHandler(str, skClient))
