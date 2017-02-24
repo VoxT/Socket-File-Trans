@@ -45,7 +45,7 @@ std::string GetCurrentPath()
     return (char*) uCurrentPath;
 }
 
-bool RequestUploadFile(const std::string& strFileName,const uint32_t uFileSize)
+bool RequestUploadFile(const std::string& strFileName, uint32_t uFileSize)
 {
     uint32_t uSendSize = 0;
     uint32_t uLenData = 0;
@@ -75,12 +75,15 @@ bool RequestUploadFile(const std::string& strFileName,const uint32_t uFileSize)
     // response from server for request upload file
     std::string strResponse = RecvMessageHandler();
     if(strResponse.compare("OK"))
+    {
+        std::cout << strResponse << endl;
         return false;
+    }
     
     return true;
 }
 
-bool SendFileProccess(std::filebuf* fbufReader,const uint32_t uFileSize)
+bool SendFileProccess(std::filebuf* fbufReader, uint32_t uFileSize)
 {
     if(!fbufReader)
         return false;
@@ -91,10 +94,9 @@ bool SendFileProccess(std::filebuf* fbufReader,const uint32_t uFileSize)
     uint32_t uBytes = 0;
     uint8_t uBuffer[READ_MAX + HEADER_SIZE + 1] = {0};
     
-    uint32_t uRemainFileSize = uFileSize;
-    while(uRemainFileSize > 0)
+    while(uFileSize > 0)
     {
-        uBytes = std::min(READ_MAX, uRemainFileSize);
+        uBytes = std::min(READ_MAX, uFileSize);
         
         memset(uBuffer, 0, sizeof(uBuffer) - 1);
         uLenData = htonl(uBytes);
@@ -112,7 +114,7 @@ bool SendFileProccess(std::filebuf* fbufReader,const uint32_t uFileSize)
             return false;
         }
         
-        uRemainFileSize -= uBytes;
+        uFileSize -= uBytes;
     }
     
     return true;
@@ -199,31 +201,30 @@ std::string RecvMessageHandler()
     return strRecv;
 }
 
-/*  
- * 
- */
-int main(int argc, char** argv) {
+bool Connect(const char* uIpAddress, uint16_t uPort)
+{
+    if(!uIpAddress)
+        return false;
     
     struct sockaddr_in saServer;
-    uint8_t uFileName[FILE_NAME_SIZE_MAX] = {0};
 
     //Create socket
     g_skClient = socket(AF_INET, SOCK_STREAM, 0);
     if (g_skClient == -1) {
         std::cout << "Could not create socket" << endl;
-        return 0;
+        return false;
     }
     std::cout << "Socket created" << endl;
 
-    saServer.sin_addr.s_addr = inet_addr("127.0.0.1");
+    saServer.sin_addr.s_addr = inet_addr(uIpAddress);
     saServer.sin_family = AF_INET;
-    saServer.sin_port = htons(8888);
+    saServer.sin_port = htons(uPort);
     
     //Connect to remote server
     if(connect(g_skClient, (struct sockaddr *) &saServer, sizeof (saServer)) < 0) {
         perror("connect failed. Error");
         close(g_skClient);
-        return 0;
+        return false;
     }
     std::cout << "Connected" << endl;
         
@@ -236,9 +237,23 @@ int main(int argc, char** argv) {
     {
         perror("set socket option failed!");
         close(g_skClient);
-        return 0;
+        return false;
     }
+    
+    return true;
+}
 
+/*  
+ * 
+ */
+int main(int argc, char** argv) {
+    
+    uint8_t uFileName[FILE_NAME_SIZE_MAX + 1] = {0};
+    
+    // connect to server
+    if(!Connect("127.0.0.1", 8888))
+        return 0;
+    
     //keep communicating with server
     while(true) {
         std::cout << "Enter file name: ";
