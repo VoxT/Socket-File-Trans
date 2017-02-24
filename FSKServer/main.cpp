@@ -22,6 +22,7 @@
 #include <iostream>
 #include <unistd.h> //sleep(sec)
 #include <fstream>      // std::ifstream, std::ofstream
+#include <limits>
 
 using namespace std;
 
@@ -30,6 +31,23 @@ const uint16_t FILE_NAME_SIZE_MAX = 120;
 const uint8_t HEADER_SIZE = sizeof(uint32_t);
 
 bool SendResponseHandler(const std::string& ,const int );
+
+
+std::string GetCurrentPath() 
+{
+    uint8_t uCurrentPath[1024];
+    if (!getcwd((char*) uCurrentPath, sizeof(uCurrentPath)))
+    {
+        perror("getcwd() error");
+        return "";
+    }
+    
+    return (char*) uCurrentPath;
+}
+
+bool FileExists (const uint8_t* uFileName) {
+    return ( access( (char*) uFileName, F_OK ) != -1 );
+}
 
 std::string MessageProcess(const std::string& strBuff)
 {    
@@ -72,23 +90,27 @@ bool RecvRequest(const int skClient, uint8_t* uFileName, uint32_t& uFileSize)
         return false;
     }
     
+    if(FileExists(uFileName))
+    {
+        std::cout << "File exists!" << endl;
+        return false;
+    }
+            
     // response to client, accept upload file
     SendResponseHandler("OK", skClient);
     
     return true;
 }
 
-bool RecvFile(const int skClient, const uint8_t* uFileName, uint32_t uFileSize)
+bool RecvFile(const int skClient, const std::string& strFileName, const uint32_t uFileSize)
 {
-    if(!uFileName)
-        return false;
-    
     uint32_t uReadSize = 0;
     uint32_t uLenData = 0;
     uint32_t uBytes = 0;
     uint8_t uRecvBuffer[RECV_MAX + 1] = {0};
     
-    std::ofstream ofsWriter((char*)uFileName, std::ofstream::out);
+    std::string strFilePath = GetCurrentPath() + "/output/" + strFileName;
+    std::ofstream ofsWriter(strFilePath.c_str(), std::ofstream::out);
 
     if(!ofsWriter.is_open())
     {
@@ -97,7 +119,8 @@ bool RecvFile(const int skClient, const uint8_t* uFileName, uint32_t uFileSize)
     }
     
     // recv file
-    while(uFileSize > 0)
+    uint32_t uRemainFileSize = uFileSize;
+    while(uRemainFileSize > 0)
     {
         // read 4 bytes (length data)
         uReadSize = recv(skClient , &uLenData , HEADER_SIZE, 0);
@@ -107,7 +130,7 @@ bool RecvFile(const int skClient, const uint8_t* uFileName, uint32_t uFileSize)
             break;
         }
         uLenData = ntohl(uLenData);
-        if(!uLenData)
+        if(!uLenData || (uLenData > uRemainFileSize))
             break;
         
         // recv data
@@ -119,9 +142,10 @@ bool RecvFile(const int skClient, const uint8_t* uFileName, uint32_t uFileSize)
             uReadSize = recv(skClient , uRecvBuffer, uBytes, 0);
             if(uReadSize != uBytes)
             {
-                ofsWriter.clear();
+//                ofsWriter.clear();
                 ofsWriter.close();
                 perror("recv data failed");
+                remove(strFilePath.c_str());
                 return false;
             }
             
@@ -129,19 +153,26 @@ bool RecvFile(const int skClient, const uint8_t* uFileName, uint32_t uFileSize)
             ofsWriter.write((char*)uRecvBuffer, uBytes);
             if(ofsWriter.fail())
             {
-                ofsWriter.clear();
+//                ofsWriter.clear();
                 ofsWriter.close();
+                remove(strFilePath.c_str());
                 perror("write data to file failed");
                 return false;
             }
             
             uLenData -= uBytes;
-            uFileSize -= uBytes;
+            uRemainFileSize -= uBytes;
         }
         
     }
     
     ofsWriter.close();
+    if(uRemainFileSize != 0)
+    {
+        remove(strFilePath.c_str());
+        return false;
+    }
+    
     return true;
 }
 
@@ -153,7 +184,7 @@ bool RecvFileHandler(const int skClient)
     if(!RecvRequest(skClient, uFileName, uFileSize))
         return false;
     
-    if(!RecvFile(skClient, uFileName, uFileSize))
+    if(!RecvFile(skClient, (char*)uFileName, uFileSize))
         return false;
     
     return true;
@@ -292,4 +323,3 @@ int main(int argc, char** argv) {
     
     return 0;
 }
-
