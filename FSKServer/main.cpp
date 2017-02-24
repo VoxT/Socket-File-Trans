@@ -11,18 +11,13 @@
  * Created on February 13, 2017, 10:55 AM
  */
 
-#include <cstdlib>
-#include <stdio.h>
 #include <string.h>    //strlen
-#include <stdlib.h>    //strlen
 #include <sys/socket.h>
 #include <arpa/inet.h> //inet_addr
-#include <unistd.h>    //write
 #include <pthread.h> //for threading , link with lpthread
 #include <iostream>
 #include <unistd.h> //sleep(sec)
 #include <fstream>      // std::ifstream, std::ofstream
-#include <limits>
 
 using namespace std;
 
@@ -237,7 +232,7 @@ void *ConnectionHandler(void *skDesc)
     int skClient = reinterpret_cast<std::uintptr_t>(skDesc);
          
     struct timeval tvTimeout;      
-    tvTimeout.tv_sec = 600;
+    tvTimeout.tv_sec = 120;
     tvTimeout.tv_usec = 0;
     
     // Set timeout

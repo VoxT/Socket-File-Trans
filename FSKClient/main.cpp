@@ -11,7 +11,6 @@
  * Created on February 13, 2017, 10:57 AM
  */
 
-#include <cstdlib>
 #include <unistd.h>
 #include <stdio.h> //printf
 #include <string.h>    //strlen
@@ -36,7 +35,7 @@ std::string RecvMessageHandler();
 std::string GetCurrentPath() 
 {
     uint8_t uCurrentPath[1024];
-    if (!getcwd((char*) uCurrentPath, sizeof(uCurrentPath)))
+    if (!getcwd((char*) uCurrentPath, sizeof(uCurrentPath) - 1))
     {
         perror("getcwd() error");
         return "";
@@ -229,7 +228,7 @@ bool Connect(const char* uIpAddress, uint16_t uPort)
     std::cout << "Connected" << endl;
         
     struct timeval tvTimeout;
-    tvTimeout.tv_sec = 600;
+    tvTimeout.tv_sec = 120;
     tvTimeout.tv_usec = 0;
     
     // set timeout
