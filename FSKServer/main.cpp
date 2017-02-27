@@ -102,6 +102,12 @@ bool RecvRequest(int skClient, uint8_t* uFileName, uint32_t& uFileSize)
 
 bool RecvData(int skClient, ofstream& ofsWriter, uint32_t uLenData)
 {
+    if(!ofsWriter.is_open())
+    {
+        perror("file not open");
+        return false;
+    }
+    
     // recv data
     uint32_t uReadSize = 0;
     uint32_t uBytes = 0;
@@ -139,7 +145,7 @@ bool RecvFile(int skClient, const std::string& strFileName, uint32_t uFileSize)
     uint32_t uLenData = 0;
     
     std::string strFilePath = GetCurrentPath() + "/output/" + strFileName;
-    std::ofstream ofsWriter(strFilePath.c_str(), std::ofstream::out);
+    std::ofstream ofsWriter (strFilePath.c_str(), std::ofstream::out);
 
     if(!ofsWriter.is_open())
     {

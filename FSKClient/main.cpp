@@ -51,7 +51,7 @@ bool RequestUploadFile(const std::string& strFileName, uint32_t uFileSize)
     uint32_t uLenSend = 0;
     uint8_t uBuffer[READ_MAX + HEADER_SIZE + 1] = {0};
     
-    // file name size to header
+    // file name length to header
     uLenData = htonl(strFileName.length());
     memcpy(uBuffer, &uLenData, HEADER_SIZE); // Set 4 bytes data length header
     
@@ -82,10 +82,13 @@ bool RequestUploadFile(const std::string& strFileName, uint32_t uFileSize)
     return true;
 }
 
-bool SendFileProccess(std::filebuf* fbufReader, uint32_t uFileSize)
+bool SendFileProccess(std::ifstream& ifsFileReader, uint32_t uFileSize)
 {
-    if(!fbufReader)
+    if(!ifsFileReader.is_open())
+    {
+        perror("open file failed");
         return false;
+    }
     
     uint32_t uSendSize = 0;
     uint32_t uLenData = 0;
@@ -102,7 +105,12 @@ bool SendFileProccess(std::filebuf* fbufReader, uint32_t uFileSize)
         memcpy(uBuffer, &uLenData, HEADER_SIZE); // Set 4 bytes data length header
         
         // read a block data
-        fbufReader->sgetn((char*)(uBuffer + HEADER_SIZE), uBytes);
+        ifsFileReader.read((char*)(uBuffer + HEADER_SIZE), uBytes);
+        if(ifsFileReader.fail())
+        {
+            std::cout << "read file failed." << endl;
+            return false;
+        }
                 
         // Send data
         uLenSend = HEADER_SIZE + uBytes;
@@ -131,17 +139,10 @@ bool SendFileHandler(const std::string& strFileName)
         return false;
     }
     
-    // get pointer to associated buffer object
-    std::filebuf* fbufReader = ifsFileReader.rdbuf();
-    if(!fbufReader) 
-    {
-        ifsFileReader.close();
-        return false;
-    }
-    
     // get file size using buffer's members
-    uint32_t uFileSize = fbufReader->pubseekoff(0, ifsFileReader.end, ifsFileReader.in);
-    fbufReader->pubseekpos (0, ifsFileReader.in);
+    ifsFileReader.seekg (0, ifsFileReader.end);
+    uint32_t uFileSize = ifsFileReader.tellg();
+    ifsFileReader.seekg (0);
     
     // Request upload file to server
     if(!RequestUploadFile(strFileName, uFileSize))
@@ -151,7 +152,7 @@ bool SendFileHandler(const std::string& strFileName)
     }
     
     // send file
-    if(!SendFileProccess(fbufReader, uFileSize))
+    if(!SendFileProccess(ifsFileReader, uFileSize))
     {        
         ifsFileReader.close();
         return false;
