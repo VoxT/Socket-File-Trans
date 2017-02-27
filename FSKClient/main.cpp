@@ -17,51 +17,39 @@
 #include <sys/socket.h>    //socket
 #include <arpa/inet.h> //inet_addr
 #include <iostream>
-#include <fstream>      // std::filebuf, std::ifstream
 
 using namespace std;
 
-const uint32_t READ_MAX = 2048;
-const uint32_t RECV_MSG_MAX = 2048;
-const uint16_t FILE_NAME_SIZE_MAX = 120;
-const uint8_t HEADER_SIZE = sizeof(uint32_t);
+#define READ_MAX                    2048
+#define RECV_MSG_MAX                2048
+#define FILE_NAME_SIZE_MAX          120
+#define HEADER_SIZE                 sizeof(uint32_t)
+#define HEADER_SIZE_FILE_NAME       sizeof(uint32_t)
+#define HEADER_SIZE_FILE_SIZE       sizeof(uint32_t)
 
 int g_skClient; // Client socket
 
 std::string RecvMessageHandler();
 
 
-
-std::string GetCurrentPath() 
-{
-    uint8_t uCurrentPath[1024];
-    if (!getcwd((char*) uCurrentPath, sizeof(uCurrentPath) - 1))
-    {
-        perror("getcwd() error");
-        return "";
-    }
-    
-    return (char*) uCurrentPath;
-}
-
 bool RequestUploadFile(const std::string& strFileName, uint32_t uFileSize)
 {
     uint32_t uSendSize = 0;
-    uint32_t uLenData = 0;
+    uint32_t uLenFileName = 0;
     uint32_t uLenSend = 0;
-    uint8_t uBuffer[READ_MAX + HEADER_SIZE + 1] = {0};
+    uint8_t uBuffer[HEADER_SIZE_FILE_NAME + HEADER_SIZE_FILE_SIZE + FILE_NAME_SIZE_MAX + 1] = {0};
     
     // file name length to header
-    uLenData = htonl(strFileName.length());
-    memcpy(uBuffer, &uLenData, HEADER_SIZE); // Set 4 bytes data length header
+    uLenFileName = htonl(strFileName.length());
+    memcpy(uBuffer, &uLenFileName, HEADER_SIZE_FILE_NAME); // Set 4 bytes data length header
     
     // file size to header
     uint32_t uFileSizeToNet = htonl(uFileSize);
-    memcpy(uBuffer + HEADER_SIZE, &uFileSizeToNet, HEADER_SIZE); // Set 4 bytes file size header
+    memcpy(uBuffer + HEADER_SIZE_FILE_NAME, &uFileSizeToNet, HEADER_SIZE_FILE_SIZE); // Set 4 bytes file size header
     
     // Set file name
-    memcpy(uBuffer + HEADER_SIZE + sizeof(uFileSize), strFileName.c_str(), strFileName.length()); 
-    uLenSend = HEADER_SIZE + sizeof(uFileSize) + strFileName.length();
+    memcpy(uBuffer + HEADER_SIZE_FILE_NAME + HEADER_SIZE_FILE_SIZE, strFileName.c_str(), strFileName.length()); 
+    uLenSend = HEADER_SIZE_FILE_NAME + HEADER_SIZE_FILE_SIZE + strFileName.length();
     
 //    cout << strlen((char*)uSendMessage) << endl; output uncorrect because of 4 bytes header
     uSendSize = send(g_skClient, uBuffer, uLenSend, 0);    
@@ -82,38 +70,33 @@ bool RequestUploadFile(const std::string& strFileName, uint32_t uFileSize)
     return true;
 }
 
-bool SendFileProccess(std::ifstream& ifsFileReader, uint32_t uFileSize)
+bool SendFileProccess(FILE* fReader, uint32_t uFileSize)
 {
-    if(!ifsFileReader.is_open())
+    if(!fReader)
     {
-        perror("open file failed");
+        std::cout << "open file failed" << endl;
         return false;
     }
     
     uint32_t uSendSize = 0;
-    uint32_t uLenData = 0;
     uint32_t uLenSend = 0;
-    uint32_t uBytes = 0;
-    uint8_t uBuffer[READ_MAX + HEADER_SIZE + 1] = {0};
+    uint32_t uReadSize = 0;
+    uint8_t uBuffer[READ_MAX + 1] = {0};
     
     while(uFileSize > 0)
     {
-        uBytes = std::min(READ_MAX, uFileSize);
-        
-        memset(uBuffer, 0, sizeof(uBuffer) - 1);
-        uLenData = htonl(uBytes);
-        memcpy(uBuffer, &uLenData, HEADER_SIZE); // Set 4 bytes data length header
+        uLenSend = std::min((uint32_t) READ_MAX, uFileSize);
         
         // read a block data
-        ifsFileReader.read((char*)(uBuffer + HEADER_SIZE), uBytes);
-        if(ifsFileReader.fail())
+        memset(uBuffer, 0, sizeof(uBuffer));
+        uReadSize = fread(uBuffer, sizeof(uint8_t), uLenSend, fReader);
+        if((uReadSize != uLenSend) || ferror(fReader))
         {
             std::cout << "read file failed." << endl;
             return false;
         }
                 
         // Send data
-        uLenSend = HEADER_SIZE + uBytes;
         uSendSize = send(g_skClient, uBuffer, uLenSend, 0);    
         if (uSendSize != uLenSend)
         {
@@ -121,45 +104,60 @@ bool SendFileProccess(std::ifstream& ifsFileReader, uint32_t uFileSize)
             return false;
         }
         
-        uFileSize -= uBytes;
+        uFileSize -= uLenSend;
     }
     
     return true;
 }
 
-bool SendFileHandler(const std::string& strFileName)
+std::string GetFileName(const std::string& strFilePath)
+{
+    uint16_t uPos = strFilePath.find_last_of("/");
+    if(uPos == std::string::npos)
+        return "";
+    
+    return strFilePath.substr(uPos, strFilePath.length());
+}
+
+bool SendFileHandler(const std::string& strFilePath)
 {
     // Open file
-    std::string strFilePath = GetCurrentPath() + "/input/" + strFileName;
-    std::ifstream ifsFileReader;
-    ifsFileReader.open(strFilePath.c_str(), std::ifstream::in);
-    if(!ifsFileReader.is_open())
+    FILE* fReader = fopen(strFilePath.c_str(), "rb");
+    if(!fReader)
     {
-        perror("open file failed");
+        std::cout << "open file failed" << endl;
         return false;
     }
     
     // get file size using buffer's members
-    ifsFileReader.seekg (0, ifsFileReader.end);
-    uint32_t uFileSize = ifsFileReader.tellg();
-    ifsFileReader.seekg (0);
+    if (fseek (fReader, 0, SEEK_END) != 0)
+        return false;
+    int32_t nFileSize = ftell(fReader);
+    if (nFileSize == -1L)
+        return false;
+    if (fseek (fReader, 0, SEEK_SET) != 0)
+        return false;
     
     // Request upload file to server
-    if(!RequestUploadFile(strFileName, uFileSize))
+    std::string strFileName = GetFileName(strFilePath);
+    if(strFileName.empty())
+        return false;
+    
+    if(!RequestUploadFile(strFileName, nFileSize))
     {        
-        ifsFileReader.close();
+        fclose(fReader);
         return false;
     }
     
     // send file
-    if(!SendFileProccess(ifsFileReader, uFileSize))
+    if(!SendFileProccess(fReader, nFileSize))
     {        
-        ifsFileReader.close();
+        fclose(fReader);
         return false;
     }
     
     // Close file
-    ifsFileReader.close();
+    fclose(fReader);
     return true;
 }
 
@@ -167,7 +165,6 @@ std::string RecvMessageHandler()
 {
     uint32_t uRecvSize = 0;
     uint32_t uLenData = 0;
-    uint8_t uBytes = 0;
     uint8_t uRecvBuffer[RECV_MSG_MAX + 1] = {0};
     std::string strRecv;
     
@@ -183,20 +180,13 @@ std::string RecvMessageHandler()
         return "";
 
     //Receive a reply from the server
-    while(uLenData > 0)
-    {
-        uBytes = std::min(uLenData, RECV_MSG_MAX);
-        
-        memset(uRecvBuffer, 0, sizeof(uRecvBuffer));
-        uRecvSize = recv(g_skClient, uRecvBuffer, uBytes, 0);
-        if (uRecvSize != uBytes) {
-            perror("recv data failed: ");
-            return "";
-        }
-        
-        strRecv += std::string((char*)uRecvBuffer);
-        uLenData -= uBytes;
+    uRecvSize = recv(g_skClient, uRecvBuffer, uLenData, 0);
+    if (uRecvSize != uLenData) {
+        perror("recv data failed: ");
+        return "";
     }
+
+    strRecv = std::string((char*)uRecvBuffer);
 
     return strRecv;
 }
@@ -248,7 +238,7 @@ bool Connect(const char* uIpAddress, uint16_t uPort)
  */
 int main(int argc, char** argv) {
     
-    uint8_t uFileName[FILE_NAME_SIZE_MAX + 1] = {0};
+    uint8_t uFilePath[FILE_NAME_SIZE_MAX + 1] = {0};
     
     // connect to server
     if(!Connect("127.0.0.1", 8888))
@@ -257,14 +247,14 @@ int main(int argc, char** argv) {
     //keep communicating with server
     while(true) {
         std::cout << "Enter file name: ";
-        std::cin.getline((char*)uFileName, FILE_NAME_SIZE_MAX);
+        std::cin.getline((char*)uFilePath, FILE_NAME_SIZE_MAX);
         
-        std::string strFileName = (char*)uFileName;
-        if(!strFileName.compare("stop"))
+        std::string strFilePath = (char*)uFilePath;
+        if(!strFilePath.compare("stop"))
             break;
         
         // Send message
-        if (!SendFileHandler(strFileName))
+        if (!SendFileHandler(strFilePath))
             break;
         
         // Receive Msg

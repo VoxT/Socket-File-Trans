@@ -17,13 +17,12 @@
 #include <pthread.h> //for threading , link with lpthread
 #include <iostream>
 #include <unistd.h> //sleep(sec)
-#include <fstream>      // std::ifstream, std::ofstream
 
 using namespace std;
 
-const uint32_t RECV_MAX = 2048;
-const uint16_t FILE_NAME_SIZE_MAX = 120;
-const uint8_t HEADER_SIZE = sizeof(uint32_t);
+#define RECV_MAX                 2048
+#define FILE_NAME_SIZE_MAX       120
+#define HEADER_SIZE              sizeof(uint32_t)
 
 bool SendResponseHandler(const std::string&, int );
 
@@ -51,28 +50,26 @@ std::string MessageProcess(const std::string& strBuff)
     return strBuff + " Success!";
 }
 
-bool RecvRequest(int skClient, uint8_t* uFileName, uint32_t& uFileSize)
-{
-    if(!uFileName)
-        return false;
-    
-    uint32_t uReadSize = 0;
-    uint32_t uLenData = 0;
+bool RecvRequest(int skClient, string& strFileName, uint32_t& uFileSize)
+{  
+    uint32_t uRecvSize = 0;
+    uint32_t uLenFileName = 0;
+    uint8_t uFileName[FILE_NAME_SIZE_MAX + 1] = {0};
     
      // read 4 bytes (length data)
-    uReadSize = recv(skClient , &uLenData , HEADER_SIZE, 0);
-    if(uReadSize != HEADER_SIZE)
+    uRecvSize = recv(skClient , &uLenFileName , HEADER_SIZE, 0);
+    if(uRecvSize != HEADER_SIZE)
     {
         std::cout << "recv header failed" << endl;
         return false;
     }
-    uLenData = ntohl(uLenData);
-    if((uLenData > FILE_NAME_SIZE_MAX) || !uLenData)
+    uLenFileName = ntohl(uLenFileName);
+    if((uLenFileName > FILE_NAME_SIZE_MAX) || !uLenFileName)
         return false;
 
     // read 4bytes file zize
-    uReadSize = recv(skClient , &uFileSize , sizeof(uint32_t), 0);
-    if(uReadSize != sizeof(uint32_t))
+    uRecvSize = recv(skClient , &uFileSize , sizeof(uint32_t), 0);
+    if(uRecvSize != sizeof(uint32_t))
     {
         std::cout << "recv file size header failed" << endl;
         return false;
@@ -80,14 +77,16 @@ bool RecvRequest(int skClient, uint8_t* uFileName, uint32_t& uFileSize)
     uFileSize = ntohl(uFileSize);    
     
     // Read data
-    uReadSize = recv(skClient , uFileName, uLenData, 0);
-    if(uReadSize != uLenData)
+    uRecvSize = recv(skClient , uFileName, uLenFileName, 0);
+    if(uRecvSize != uLenFileName)
     {
         perror("recv data failed");
         return false;
     }
     
-    if(FileExists((char*) uFileName))
+    strFileName = std::string((char*) uFileName);
+    
+    if(FileExists(strFileName))
     {
         std::cout << "File exists!" << endl;
         SendResponseHandler("File Exists!", skClient);
@@ -95,88 +94,56 @@ bool RecvRequest(int skClient, uint8_t* uFileName, uint32_t& uFileSize)
     }
             
     // response to client, accept upload file
-    SendResponseHandler("OK", skClient);
-    
+    if (!SendResponseHandler("OK", skClient))
+        return false;
+       
     return true;
 }
 
-bool RecvData(int skClient, ofstream& ofsWriter, uint32_t uLenData)
-{
-    if(!ofsWriter.is_open())
+
+bool RecvFileData(int skClient, const std::string& strFileName, uint32_t uFileSize)
+{  
+    if(strFileName.empty())
     {
-        perror("file not open");
+        std::cout << "File name empty" << endl;
         return false;
     }
     
-    // recv data
-    uint32_t uReadSize = 0;
-    uint32_t uBytes = 0;
+    uint32_t uRecvSize = 0;
     uint8_t uRecvBuffer[RECV_MAX + 1] = {0};
-    
-    while(uLenData > 0)
-    {
-        uBytes = std::min(uLenData, RECV_MAX);        
-
-        memset(uRecvBuffer, 0, sizeof(uRecvBuffer));
-        uReadSize = recv(skClient , uRecvBuffer, uBytes, 0);
-        if(uReadSize != uBytes)
-        {
-            perror("recv data failed");
-            return false;
-        }
-
-        //write to file
-        ofsWriter.write((char*)uRecvBuffer, uBytes);
-        if(ofsWriter.fail())
-        {
-            perror("write data to file failed");
-            return false;
-        }
-
-        uLenData -= uBytes;
-    }
-    
-    return true;
-}
-
-bool RecvFile(int skClient, const std::string& strFileName, uint32_t uFileSize)
-{
-    uint32_t uReadSize = 0;
-    uint32_t uLenData = 0;
+    uint32_t uWriteSize = 0;
     
     std::string strFilePath = GetCurrentPath() + "/output/" + strFileName;
-    std::ofstream ofsWriter (strFilePath.c_str(), std::ofstream::out);
-
-    if(!ofsWriter.is_open())
+    FILE* fWriter = fopen(strFilePath.c_str(), "wb");
+    if(!fWriter)
     {
-        perror("create file failed");
+        std::cout << "create file failed" << endl;
         return false;
     }
     
     // recv file
     while(uFileSize > 0)
-    {
-        // read 4 bytes (length data)
-        uReadSize = recv(skClient , &uLenData , HEADER_SIZE, 0);
-        if(uReadSize != HEADER_SIZE)
+    {        
+        memset((char*) uRecvBuffer, 0, sizeof(uRecvBuffer));
+        uRecvSize = recv(skClient , uRecvBuffer, RECV_MAX, 0);
+        
+        //write to file
+        uWriteSize = fwrite(uRecvBuffer, sizeof(uint8_t), uRecvSize, fWriter);
+        if((uWriteSize != uRecvSize) || ferror(fWriter))
         {
-            std::cout << "recv header failed" << endl;
+            std::cout << "write data to file failed" << endl;
             break;
         }
-        uLenData = ntohl(uLenData);
-        if(!uLenData || (uLenData > uFileSize))
-            break;
-        
-        if(!RecvData(skClient, ofsWriter, uLenData))
-            break;
-        
-        uFileSize -= uLenData;
+
+        uFileSize -= uRecvSize;
     }
     
-    ofsWriter.close();
+    fclose(fWriter);
     if(uFileSize != 0)
     {
-        remove(strFilePath.c_str());
+        if(remove(strFilePath.c_str()) != 0)
+            std::cout << "remove file error" << endl;
+        
         return false;
     }
     
@@ -185,13 +152,13 @@ bool RecvFile(int skClient, const std::string& strFileName, uint32_t uFileSize)
 
 bool RecvFileHandler(int skClient)
 {
-    uint8_t uFileName[FILE_NAME_SIZE_MAX + 1] = {0};
     uint32_t uFileSize = 0;
+    std::string strFileName;
     
-    if(!RecvRequest(skClient, uFileName, uFileSize))
+    if(!RecvRequest(skClient, strFileName, uFileSize))
         return false;
     
-    if(!RecvFile(skClient, (char*) uFileName, uFileSize))
+    if(!RecvFileData(skClient, strFileName, uFileSize))
         return false;
     
     return true;
