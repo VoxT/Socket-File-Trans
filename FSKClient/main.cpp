@@ -70,7 +70,7 @@ bool RequestUploadFile(const std::string& strFileName, uint32_t uFileSize)
     return true;
 }
 
-bool SendFileProccess(FILE* fReader, uint32_t uFileSize)
+bool SendFileData(FILE* fReader, uint32_t uFileSize)
 {
     if(!fReader)
     {
@@ -112,9 +112,9 @@ bool SendFileProccess(FILE* fReader, uint32_t uFileSize)
 
 std::string GetFileName(const std::string& strFilePath)
 {
-    uint16_t uPos = strFilePath.find_last_of("/");
+    size_t uPos = strFilePath.find_last_of("/");
     if(uPos == std::string::npos)
-        return "";
+        return strFilePath;
     
     return strFilePath.substr(uPos, strFilePath.length());
 }
@@ -150,7 +150,7 @@ bool SendFileHandler(const std::string& strFilePath)
     }
     
     // send file
-    if(!SendFileProccess(fReader, nFileSize))
+    if(!SendFileData(fReader, nFileSize))
     {        
         fclose(fReader);
         return false;
