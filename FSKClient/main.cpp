@@ -6,7 +6,7 @@
 
 /* 
  * File:   main.cpp
- * Author: root
+ * Author: Thieu Vo
  *
  * Created on February 13, 2017, 10:57 AM
  */
@@ -131,17 +131,29 @@ bool SendFileHandler(const std::string& strFilePath)
     
     // get file size using buffer's members
     if (fseek (fReader, 0, SEEK_END) != 0)
+    {
+        fclose(fReader);
         return false;
+    }
     int32_t nFileSize = ftell(fReader);
     if (nFileSize == -1L)
+    {
+        fclose(fReader);
         return false;
+    }
     if (fseek (fReader, 0, SEEK_SET) != 0)
+    {
+        fclose(fReader);
         return false;
+    }
     
     // Request upload file to server
     std::string strFileName = GetFileName(strFilePath);
     if(strFileName.empty())
+    {
+        fclose(fReader);
         return false;
+    }
     
     if(!RequestUploadFile(strFileName, nFileSize))
     {        
@@ -166,7 +178,6 @@ std::string RecvMessageHandler()
     uint32_t uRecvSize = 0;
     uint32_t uLenData = 0;
     uint8_t uRecvBuffer[RECV_MSG_MAX + 1] = {0};
-    std::string strRecv;
     
     // Receive 4 bytes header
     uRecvSize = recv(g_skClient, &uLenData, HEADER_SIZE, 0);
@@ -186,14 +197,12 @@ std::string RecvMessageHandler()
         return "";
     }
 
-    strRecv = std::string((char*)uRecvBuffer);
-
-    return strRecv;
+    return  std::string((char*)uRecvBuffer);
 }
 
-bool Connect(const char* uIpAddress, uint16_t uPort)
+bool ConnectToServer(const string& strIpAddress, uint16_t uPort)
 {
-    if(!uIpAddress)
+    if(strIpAddress.empty())
         return false;
     
     struct sockaddr_in saServer;
@@ -206,7 +215,7 @@ bool Connect(const char* uIpAddress, uint16_t uPort)
     }
     std::cout << "Socket created" << endl;
 
-    saServer.sin_addr.s_addr = inet_addr(uIpAddress);
+    saServer.sin_addr.s_addr = inet_addr(strIpAddress.c_str());
     saServer.sin_family = AF_INET;
     saServer.sin_port = htons(uPort);
     
@@ -241,7 +250,7 @@ int main(int argc, char** argv) {
     uint8_t uFilePath[FILE_NAME_SIZE_MAX + 1] = {0};
     
     // connect to server
-    if(!Connect("127.0.0.1", 8888))
+    if(!ConnectToServer("127.0.0.1", 8888))
         return 0;
     
     //keep communicating with server

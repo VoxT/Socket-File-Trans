@@ -30,7 +30,7 @@ bool SendResponseHandler(const std::string&, int );
 std::string GetCurrentPath() 
 {
     uint8_t uCurrentPath[1024];
-    if (!getcwd((char*) uCurrentPath, sizeof(uCurrentPath)))
+    if (!getcwd((char*) uCurrentPath, sizeof(uCurrentPath) - 1))
     {
         perror("getcwd() error");
         return "";
@@ -52,6 +52,9 @@ std::string MessageProcess(const std::string& strBuff)
 
 bool RecvRequest(int skClient, string& strFileName, uint32_t& uFileSize)
 {  
+    strFileName.clear();
+    uFileSize = 0;
+    
     uint32_t uRecvSize = 0;
     uint32_t uLenFileName = 0;
     uint8_t uFileName[FILE_NAME_SIZE_MAX + 1] = {0};
