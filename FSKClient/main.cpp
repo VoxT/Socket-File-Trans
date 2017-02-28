@@ -31,106 +31,105 @@ int g_skClient; // Client socket
 
 std::string RecvMessageHandler();
 
-
 bool RequestUploadFile(const std::string& strFileName, uint32_t uFileSize)
 {
     uint32_t uSendSize = 0;
     uint32_t uLenFileName = 0;
     uint32_t uLenSend = 0;
     uint8_t uBuffer[HEADER_SIZE_FILE_NAME + HEADER_SIZE_FILE_SIZE + FILE_NAME_SIZE_MAX + 1] = {0};
-    
+
     // file name length to header
     uLenFileName = htonl(strFileName.length());
     memcpy(uBuffer, &uLenFileName, HEADER_SIZE_FILE_NAME); // Set 4 bytes data length header
-    
+
     // file size to header
     uint32_t uFileSizeToNet = htonl(uFileSize);
     memcpy(uBuffer + HEADER_SIZE_FILE_NAME, &uFileSizeToNet, HEADER_SIZE_FILE_SIZE); // Set 4 bytes file size header
-    
+
     // Set file name
-    memcpy(uBuffer + HEADER_SIZE_FILE_NAME + HEADER_SIZE_FILE_SIZE, strFileName.c_str(), strFileName.length()); 
+    memcpy(uBuffer + HEADER_SIZE_FILE_NAME + HEADER_SIZE_FILE_SIZE, strFileName.c_str(), strFileName.length());
     uLenSend = HEADER_SIZE_FILE_NAME + HEADER_SIZE_FILE_SIZE + strFileName.length();
-    
-//    cout << strlen((char*)uSendMessage) << endl; output uncorrect because of 4 bytes header
-    uSendSize = send(g_skClient, uBuffer, uLenSend, 0);    
+
+    //    cout << strlen((char*)uSendMessage) << endl; output uncorrect because of 4 bytes header
+    uSendSize = send(g_skClient, uBuffer, uLenSend, 0);
     if (uSendSize != uLenSend)
     {
         perror("send failed");
         return false;
     }
-    
+
     // response from server for request upload file
     std::string strResponse = RecvMessageHandler();
-    if(strResponse.compare("OK"))
+    if (strResponse.compare("OK"))
     {
         std::cout << strResponse << endl;
         return false;
     }
-    
+
     return true;
 }
 
 bool SendFileData(FILE* fReader, uint32_t uFileSize)
 {
-    if(!fReader)
+    if (!fReader)
     {
         std::cout << "open file failed" << endl;
         return false;
     }
-    
+
     uint32_t uSendSize = 0;
     uint32_t uLenSend = 0;
     uint32_t uReadSize = 0;
     uint8_t uBuffer[READ_MAX + 1] = {0};
-    
-    while(uFileSize > 0)
+
+    while (uFileSize > 0)
     {
         uLenSend = std::min((uint32_t) READ_MAX, uFileSize);
-        
+
         // read a block data
-        memset(uBuffer, 0, sizeof(uBuffer));
-        uReadSize = fread(uBuffer, sizeof(uint8_t), uLenSend, fReader);
-        if((uReadSize != uLenSend) || ferror(fReader))
+        memset(uBuffer, 0, sizeof (uBuffer));
+        uReadSize = fread(uBuffer, sizeof (uint8_t), uLenSend, fReader);
+        if ((uReadSize != uLenSend) || ferror(fReader))
         {
             std::cout << "read file failed." << endl;
             return false;
         }
-                
+
         // Send data
-        uSendSize = send(g_skClient, uBuffer, uLenSend, 0);    
+        uSendSize = send(g_skClient, uBuffer, uLenSend, 0);
         if (uSendSize != uLenSend)
         {
             perror("send failed");
             return false;
         }
-        
+
         uFileSize -= uLenSend;
     }
-    
+
     return true;
 }
 
 std::string GetFileName(const std::string& strFilePath)
 {
     size_t uPos = strFilePath.find_last_of("/");
-    if(uPos == std::string::npos)
+    if (uPos == std::string::npos)
         return strFilePath;
-    
-    return strFilePath.substr(uPos, strFilePath.length());
+
+    return strFilePath.substr(uPos);
 }
 
 bool SendFileHandler(const std::string& strFilePath)
 {
     // Open file
     FILE* fReader = fopen(strFilePath.c_str(), "rb");
-    if(!fReader)
+    if (!fReader)
     {
         std::cout << "open file failed" << endl;
         return false;
     }
-    
+
     // get file size using buffer's members
-    if (fseek (fReader, 0, SEEK_END) != 0)
+    if (fseek(fReader, 0, SEEK_END) != 0)
     {
         fclose(fReader);
         return false;
@@ -141,33 +140,33 @@ bool SendFileHandler(const std::string& strFilePath)
         fclose(fReader);
         return false;
     }
-    if (fseek (fReader, 0, SEEK_SET) != 0)
+    if (fseek(fReader, 0, SEEK_SET) != 0)
     {
         fclose(fReader);
         return false;
     }
-    
+
     // Request upload file to server
     std::string strFileName = GetFileName(strFilePath);
-    if(strFileName.empty())
+    if (strFileName.empty())
     {
         fclose(fReader);
         return false;
     }
-    
-    if(!RequestUploadFile(strFileName, nFileSize))
-    {        
+
+    if (!RequestUploadFile(strFileName, nFileSize))
+    {
         fclose(fReader);
         return false;
     }
-    
+
     // send file
-    if(!SendFileData(fReader, nFileSize))
-    {        
+    if (!SendFileData(fReader, nFileSize))
+    {
         fclose(fReader);
         return false;
     }
-    
+
     // Close file
     fclose(fReader);
     return true;
@@ -178,10 +177,10 @@ std::string RecvMessageHandler()
     uint32_t uRecvSize = 0;
     uint32_t uLenData = 0;
     uint8_t uRecvBuffer[RECV_MSG_MAX + 1] = {0};
-    
+
     // Receive 4 bytes header
     uRecvSize = recv(g_skClient, &uLenData, HEADER_SIZE, 0);
-    if (uRecvSize != HEADER_SIZE) 
+    if (uRecvSize != HEADER_SIZE)
     {
         perror("recv header failed");
         return "";
@@ -192,24 +191,26 @@ std::string RecvMessageHandler()
 
     //Receive a reply from the server
     uRecvSize = recv(g_skClient, uRecvBuffer, uLenData, 0);
-    if (uRecvSize != uLenData) {
+    if (uRecvSize != uLenData)
+    {
         perror("recv data failed: ");
         return "";
     }
 
-    return  std::string((char*)uRecvBuffer);
+    return std::string((char*) uRecvBuffer);
 }
 
 bool ConnectToServer(const string& strIpAddress, uint16_t uPort)
 {
-    if(strIpAddress.empty())
+    if (strIpAddress.empty())
         return false;
-    
+
     struct sockaddr_in saServer;
 
     //Create socket
     g_skClient = socket(AF_INET, SOCK_STREAM, 0);
-    if (g_skClient == -1) {
+    if (g_skClient == -1)
+    {
         std::cout << "Could not create socket" << endl;
         return false;
     }
@@ -218,59 +219,62 @@ bool ConnectToServer(const string& strIpAddress, uint16_t uPort)
     saServer.sin_addr.s_addr = inet_addr(strIpAddress.c_str());
     saServer.sin_family = AF_INET;
     saServer.sin_port = htons(uPort);
-    
+
     //Connect to remote server
-    if(connect(g_skClient, (struct sockaddr *) &saServer, sizeof (saServer)) < 0) {
+    if (connect(g_skClient, (struct sockaddr *) &saServer, sizeof (saServer)) < 0)
+    {
         perror("connect failed. Error");
         close(g_skClient);
         return false;
     }
     std::cout << "Connected" << endl;
-        
+
     struct timeval tvTimeout;
     tvTimeout.tv_sec = 120;
     tvTimeout.tv_usec = 0;
-    
+
     // set timeout
-    if (setsockopt(g_skClient, SOL_SOCKET, SO_RCVTIMEO, (char *)&tvTimeout,sizeof(struct timeval)) < 0)
+    if (setsockopt(g_skClient, SOL_SOCKET, SO_RCVTIMEO, (char *) &tvTimeout, sizeof (struct timeval)) < 0)
     {
         perror("set socket option failed!");
         close(g_skClient);
         return false;
     }
-    
+
     return true;
 }
 
 /*  
  * 
  */
-int main(int argc, char** argv) {
-    
+int main(int argc, char** argv)
+{
+
     uint8_t uFilePath[FILE_NAME_SIZE_MAX + 1] = {0};
-    
+
     // connect to server
-    if(!ConnectToServer("127.0.0.1", 8888))
+    if (!ConnectToServer("127.0.0.1", 8888))
         return 0;
-    
+
     //keep communicating with server
-    while(true) {
+    while (true)
+    {
         std::cout << "Enter file name: ";
-        std::cin.getline((char*)uFilePath, FILE_NAME_SIZE_MAX);
-        
-        std::string strFilePath = (char*)uFilePath;
-        if(!strFilePath.compare("stop"))
+        std::cin.getline((char*) uFilePath, FILE_NAME_SIZE_MAX);
+
+        std::string strFilePath = (char*) uFilePath;
+        if (!strFilePath.compare("stop"))
             break;
-        
+
         // Send message
         if (!SendFileHandler(strFilePath))
             break;
-        
+
         // Receive Msg
         std::string strResponseMsg = RecvMessageHandler();
-        if(strResponseMsg.empty())
+        if (strResponseMsg.empty())
             break;
-        
+
         std::cout << "Server reply: " << strResponseMsg << endl;
     }
 
